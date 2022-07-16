@@ -50,7 +50,7 @@ describe('Merkle tree', function () {
     )
   })
 
-  it('adds nodes correctly', async () => {
+  it.only('adds nodes correctly', async () => {
     const tree = await makeTree()
 
     await tree.add('a')
@@ -124,6 +124,7 @@ describe('Merkle tree', function () {
     ])
 
     await tree.add('i')
+    console.log('HASHCOUNT', tree.hashCount)
     await expect(tree).toHaveLeaves('abcdefghi', [1, 1, 2, 2, 4, 4, 7, 7, 8])
     await expect(tree).toHaveNodes([
       [1, Side.Left, 3, '<c|d-0>'],

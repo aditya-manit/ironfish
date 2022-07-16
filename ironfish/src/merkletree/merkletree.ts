@@ -35,6 +35,8 @@ export class MerkleTree<
   readonly leavesIndex: IDatabaseStore<LeavesIndexSchema<H>>
   readonly nodes: IDatabaseStore<NodesSchema<H>>
 
+  hashCount = 0
+
   constructor({
     hasher,
     db,
@@ -219,6 +221,8 @@ export class MerkleTree<
         const leftLeafIndex = 0
         const leftLeaf = await this.getLeaf(leftLeafIndex, tx)
         const hashOfSibling = this.hasher.combineHash(0, leftLeaf.merkleHash, merkleHash)
+        this.hashCount++
+        console.log('made hash', hashOfSibling)
 
         await this.nodes.put(
           newParentIndex,
@@ -255,6 +259,8 @@ export class MerkleTree<
 
         let nextNodeIndex = await this.getCount('Nodes', tx)
         let myHash = this.hasher.combineHash(0, merkleHash, merkleHash)
+        this.hashCount++
+        console.log('made hash', myHash)
         let depth = 1
         let shouldContinue = true
 
@@ -288,6 +294,8 @@ export class MerkleTree<
                 ),
                 index: nextNodeIndex,
               }
+              this.hashCount++
+              console.log('made hash', newParent.hashOfSibling)
 
               await this.nodes.put(nextNodeIndex, newParent, tx)
 
@@ -309,6 +317,8 @@ export class MerkleTree<
           } else {
             // previous parent is a right node, gotta go up a step
             myHash = this.hasher.combineHash(depth, myHash, myHash)
+            this.hashCount++
+            console.log('made hash', myHash)
 
             if (previousParent.leftIndex === undefined) {
               throw new Error(`Parent has no left sibling`)
@@ -628,6 +638,8 @@ export class MerkleTree<
     } else {
       parentHash = this.hasher.combineHash(depth, leafHash, leafHash)
     }
+    this.hashCount++
+    console.log('made hash', parentHash)
 
     while (!isEmpty(parentIndex)) {
       const node = await this.getNode(parentIndex, tx)
@@ -651,6 +663,8 @@ export class MerkleTree<
 
           parentIndex = node.parentIndex
           parentHash = this.hasher.combineHash(depth, parentHash, parentHash)
+          this.hashCount++
+          console.log('made hash', parentHash)
           break
         }
 
@@ -676,6 +690,8 @@ export class MerkleTree<
 
           parentIndex = leftNode.parentIndex
           parentHash = this.hasher.combineHash(depth, node.hashOfSibling, parentHash)
+          this.hashCount++
+          console.log('made hash', parentHash)
           break
         }
       }
