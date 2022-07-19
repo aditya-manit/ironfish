@@ -35,6 +35,8 @@ export class MerkleTree<
   readonly leavesIndex: IDatabaseStore<LeavesIndexSchema<H>>
   readonly nodes: IDatabaseStore<NodesSchema<H>>
 
+  lastHashIndex = 0
+
   constructor({
     hasher,
     db,
@@ -345,7 +347,7 @@ export class MerkleTree<
         tx,
       )
 
-      await this.rehashRightPath(tx)
+      // await this.rehashRightPath(tx)
     })
   }
 
@@ -661,7 +663,7 @@ export class MerkleTree<
         leafIndex--
       }
 
-      for (leafIndex; leafIndex > 0; leafIndex -= 2) {
+      for (leafIndex; leafIndex > this.lastHashIndex; leafIndex -= 2) {
         const leftLeaf = await this.getLeaf(leafIndex - 1, tx)
         const rightLeaf = await this.getLeaf(leafIndex, tx)
         let depth = 0
@@ -685,7 +687,6 @@ export class MerkleTree<
 
             Assert.isNotUndefined(index)
           } else {
-            console.log('=============== HERE ================')
             index = leftLeaf.parentIndex
           }
         } else {
@@ -761,6 +762,8 @@ export class MerkleTree<
           node = await this.getNode(node.parentIndex, tx)
         }
       }
+
+      this.lastHashIndex = leavesCount - 1
     })
   }
 
@@ -776,17 +779,17 @@ export class MerkleTree<
     const leafIndex = (await this.getCount('Leaves', tx)) - 1
     const leaf = await this.getLeaf(leafIndex, tx)
     let parentIndex = leaf.parentIndex as NodeIndex | undefined
-    // const leafHash = leaf.merkleHash
-    let parentHash = '~' as H
+    const leafHash = leaf.merkleHash
+    let parentHash
 
-    // if (isRight(leafIndex)) {
-    //   const leftSiblingIndex = leafIndex - 1
-    //   const leftSibling = await this.getLeaf(leftSiblingIndex, tx)
-    //   const leftSiblingHash = leftSibling.merkleHash
-    //   parentHash = this.hasher.combineHash(depth, leftSiblingHash, leafHash)
-    // } else {
-    //   parentHash = this.hasher.combineHash(depth, leafHash, leafHash)
-    // }
+    if (isRight(leafIndex)) {
+      const leftSiblingIndex = leafIndex - 1
+      const leftSibling = await this.getLeaf(leftSiblingIndex, tx)
+      const leftSiblingHash = leftSibling.merkleHash
+      parentHash = this.hasher.combineHash(depth, leftSiblingHash, leafHash)
+    } else {
+      parentHash = this.hasher.combineHash(depth, leafHash, leafHash)
+    }
 
     while (!isEmpty(parentIndex)) {
       const node = await this.getNode(parentIndex, tx)
@@ -809,7 +812,7 @@ export class MerkleTree<
           )
 
           parentIndex = node.parentIndex
-          parentHash = '~' as H // this.hasher.combineHash(depth, parentHash, parentHash)
+          parentHash = this.hasher.combineHash(depth, parentHash, parentHash)
           break
         }
 
@@ -834,7 +837,7 @@ export class MerkleTree<
           )
 
           parentIndex = leftNode.parentIndex
-          parentHash = '~' as H // this.hasher.combineHash(depth, node.hashOfSibling, parentHash)
+          parentHash = this.hasher.combineHash(depth, node.hashOfSibling, parentHash)
           break
         }
       }
