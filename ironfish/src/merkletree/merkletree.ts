@@ -764,6 +764,9 @@ export class MerkleTree<
       }
 
       this.lastHashIndex = leavesCount - 1
+
+      // TODO: It should be possible to optimize this down
+      await this.rehashRightPath(tx)
     })
   }
 
