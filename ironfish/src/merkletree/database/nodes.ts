@@ -12,6 +12,7 @@ type LeftNodeValue<H> = {
   side: Side.Left
   hashOfSibling: H
   parentIndex: number // left nodes have a parent index
+  rightIndex?: number // left nodes may have a right index
 }
 
 type RightNodeValue<H> = {
@@ -22,13 +23,16 @@ type RightNodeValue<H> = {
 
 export class NodeEncoding implements IDatabaseEncoding<NodeValue<Buffer>> {
   serialize(value: NodeValue<Buffer>): Buffer {
-    const bw = bufio.write(this.getSize())
+    const bw = bufio.write(this.getSize(value))
 
     bw.writeHash(value.hashOfSibling)
 
     if (value.side === Side.Left) {
       bw.writeU8(0)
       bw.writeU32(value.parentIndex)
+      if (value.rightIndex !== undefined) {
+        bw.writeU32(value.rightIndex)
+      }
     } else {
       bw.writeU8(1)
       bw.writeU32(value.leftIndex)
@@ -48,10 +52,15 @@ export class NodeEncoding implements IDatabaseEncoding<NodeValue<Buffer>> {
     const otherIndex = reader.readU32()
 
     if (side === Side.Left) {
+      let rightIndex
+      if (reader.left() > 0) {
+        rightIndex = reader.readU32()
+      }
       const leftNode: LeftNodeValue<Buffer> = {
         side,
         hashOfSibling,
         parentIndex: otherIndex,
+        rightIndex,
       }
       return leftNode
     }
@@ -64,11 +73,14 @@ export class NodeEncoding implements IDatabaseEncoding<NodeValue<Buffer>> {
     return rightNode
   }
 
-  getSize(): number {
+  getSize(value: NodeValue<Buffer>): number {
     let size = 0
     size += 1 // side
     size += 32 // merkleHash
-    size += 4 // parentIndex
+    size += 4 // parentIndex/leftIndex
+    if (value.side === Side.Left && value.rightIndex !== undefined) {
+      size += 4
+    }
     return size
   }
 }

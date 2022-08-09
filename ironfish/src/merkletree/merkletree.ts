@@ -19,6 +19,8 @@ import { CounterSchema, LeavesIndexSchema, LeavesSchema, NodesSchema } from './s
 import { depthAtLeafCount, isEmpty, isRight } from './utils'
 import { Witness, WitnessNode } from './witness'
 
+const defaultHash = '~' // Buffer.alloc(32, 0)
+
 export class MerkleTree<
   E,
   H extends DatabaseKey,
@@ -196,11 +198,11 @@ export class MerkleTree<
   }
 
   /**
-   * Add the new leaf element into the tree, and update all hashes.
+   * Add the new leaf element into the tree.
    */
   async add(element: E, tx?: IDatabaseTransaction): Promise<void> {
+    const merkleHash = this.hasher.merkleHash(element)
     await this.db.withTransaction(tx, async (tx) => {
-      const merkleHash = this.hasher.merkleHash(element)
       const indexOfNewLeaf = await this.getCount('Leaves', tx)
 
       let newParentIndex: NodeIndex
@@ -214,7 +216,7 @@ export class MerkleTree<
 
         const leftLeafIndex = 0
         const leftLeaf = await this.getLeaf(leftLeafIndex, tx)
-        const hashOfSibling = '~' as H // this.hasher.combineHash(0, leftLeaf.merkleHash, merkleHash)
+        const hashOfSibling = defaultHash as H
 
         await this.nodes.put(
           newParentIndex,
@@ -250,8 +252,7 @@ export class MerkleTree<
         let previousParentIndex = previousLeaf.parentIndex
 
         let nextNodeIndex = await this.getCount('Nodes', tx)
-        let myHash = '~' as H // this.hasher.combineHash(0, merkleHash, merkleHash)
-        let depth = 1
+        let myHash = defaultHash as H
         let shouldContinue = true
 
         newParentIndex = nextNodeIndex
@@ -265,24 +266,19 @@ export class MerkleTree<
               side: Side.Right,
               leftIndex: previousParentIndex,
               hashOfSibling: previousParent.hashOfSibling,
-              index: nextNodeIndex,
             }
 
             await this.nodes.put(nextNodeIndex, newNode, tx)
+
             nextNodeIndex += 1
 
             await this.counter.put('Nodes', nextNodeIndex, tx)
 
-            if (!previousParent.parentIndex || isEmpty(previousParent.parentIndex)) {
+            if (isEmpty(previousParent.parentIndex)) {
               const newParent = {
                 side: Side.Left,
                 parentIndex: 0,
-                hashOfSibling: '~' as H /* this.hasher.combineHash(
-                  depth,
-                  previousParent.hashOfSibling,
-                  myHash,
-                )*/,
-                index: nextNodeIndex,
+                hashOfSibling: defaultHash as H,
               }
 
               await this.nodes.put(nextNodeIndex, newParent, tx)
@@ -299,18 +295,38 @@ export class MerkleTree<
 
               nextNodeIndex += 1
               await this.counter.put('Nodes', nextNodeIndex, tx)
+            } else {
+              // Add the right index to the left node
+
+              await this.nodes.put(
+                previousParentIndex,
+                {
+                  ...previousParent,
+                  rightIndex: nextNodeIndex,
+                },
+                tx,
+              )
             }
 
             shouldContinue = false
           } else {
             // previous parent is a right node, gotta go up a step
-            myHash = '~' as H // this.hasher.combineHash(depth, myHash, myHash)
+            myHash = defaultHash as H
 
             if (previousParent.leftIndex === undefined) {
               throw new Error(`Parent has no left sibling`)
             }
 
             const leftSibling = await this.getNode(previousParent.leftIndex, tx)
+
+            await this.nodes.put(
+              previousParent.leftIndex,
+              {
+                ...leftSibling,
+                rightIndex: previousParentIndex,
+              },
+              tx,
+            )
 
             if (leftSibling.parentIndex === undefined) {
               throw new Error(`Left sibling has no parent`)
@@ -321,7 +337,6 @@ export class MerkleTree<
               side: Side.Left,
               parentIndex: nextNodeIndex + 1, // where the next node will be (in the next iteration)
               hashOfSibling: myHash,
-              index: nextNodeIndex,
             }
             await this.nodes.put(nextNodeIndex, newNode, tx)
 
@@ -330,7 +345,6 @@ export class MerkleTree<
             await this.counter.put('Nodes', nextNodeIndex, tx)
 
             previousParentIndex = leftSiblingParentIndex
-            depth += 1
           }
         }
       }
@@ -346,8 +360,6 @@ export class MerkleTree<
         },
         tx,
       )
-
-      // await this.rehashRightPath(tx)
     })
   }
 
@@ -612,6 +624,12 @@ export class MerkleTree<
       if (v.leftIndex === index) {
         parentIndex = k
         parentNode = v
+        console.log(
+          `index: ${k} other: ${index} total nodes: ${await this.getCount(
+            'Nodes',
+            tx,
+          )} total leaves: ${await this.getCount('Leaves', tx)}`,
+        )
         break
       }
     }
@@ -648,7 +666,7 @@ export class MerkleTree<
         while (node.side === 'Left') {
           hash = this.hasher.combineHash(depth, hash, hash)
 
-          console.log('putting hash', hash, 'at', parentIndex)
+          // console.log('putting hash', hash, 'at', parentIndex)
 
           await this.nodes.put(
             parentIndex,
@@ -672,7 +690,7 @@ export class MerkleTree<
         const leftNode = await this.getNode(leftIndex, tx)
         hash = this.hasher.combineHash(depth, hash, hash)
 
-        console.log('putting hash', hash, 'at', leftIndex)
+        // console.log('putting hash', hash, 'at', leftIndex)
 
         await this.nodes.put(
           leftIndex,
@@ -707,12 +725,7 @@ export class MerkleTree<
           if (seenRight) {
             seenRight = false
 
-            for await (const [k, v] of this.nodes.getAllIter(tx)) {
-              if (v.leftIndex === leftLeaf.parentIndex) {
-                index = k
-                break
-              }
-            }
+            index = node.rightIndex
 
             Assert.isNotUndefined(index)
           } else {
@@ -726,7 +739,7 @@ export class MerkleTree<
         }
 
         const siblingNode = await this.getNode(index, tx)
-        console.log('putting hash', hash, 'at', index)
+        // console.log('putting hash', hash, 'at', index)
         await this.nodes.put(
           index,
           {
@@ -754,7 +767,7 @@ export class MerkleTree<
           Assert.isNotUndefined(rightHash)
           const hash = this.hasher.combineHash(depth, leftHash.hash, rightHash.hash)
 
-          console.log('putting hash', hash, 'at', parentIndex)
+          // console.log('putting hash', hash, 'at', parentIndex)
 
           await this.nodes.put(
             parentIndex,
@@ -793,9 +806,13 @@ export class MerkleTree<
           Assert.isNotUndefined(node.leftIndex)
           siblingNode = await this.getNode(node.leftIndex, tx)
         } else {
-          for await (const [k, v] of this.nodes.getAllIter(tx)) {
-            if (v.leftIndex === hash.index) {
-              siblingNode = v
+          if (node.rightIndex) {
+            siblingNode = await this.getNode(node.rightIndex, tx)
+          } else {
+            for await (const [k, v] of this.nodes.getAllIter(tx)) {
+              if (v.leftIndex === hash.index) {
+                siblingNode = v
+              }
             }
           }
         }
@@ -816,7 +833,7 @@ export class MerkleTree<
             ? this.hasher.combineHash(hash.depth + 1, siblingNode.hashOfSibling, hash.hash)
             : this.hasher.combineHash(hash.depth + 1, hash.hash, siblingNode.hashOfSibling)
 
-        console.log('putting hash', newHash, 'at', parentIndex)
+        // console.log('putting hash', newHash, 'at', parentIndex)
 
         await this.nodes.put(
           parentIndex,

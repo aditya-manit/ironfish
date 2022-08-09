@@ -8,7 +8,7 @@ import { LeafIndex, NodeIndex } from './merkletree'
  * Is the given leaf a right child or left child of its parent node.
  *
  * Leaves are added in order, so this is the same as asking if the index
- * is an od number
+ * is an odd number
  */
 export function isRight(index: LeafIndex): boolean {
   return index % 2 === 1

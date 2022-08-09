@@ -40,16 +40,20 @@ export default class BenchmarkChain extends IronfishCommand {
       logger: this.logger,
     })
     const benchmarkNode = await benchmarkSdk.node()
-    await benchmarkNode.openDB()
-    await benchmarkNode.chain.open()
-    CliUx.ux.action.start(`done.`)
+    try {
+      await benchmarkNode.openDB()
+      await benchmarkNode.chain.open()
+    } catch (e) {
+      this.log((e as Error).stack)
+    }
+    CliUx.ux.action.stop(`done.`)
 
     if (node.chain.isEmpty) {
       this.log(`Chain is too corrupt. Delete your DB at ${node.config.chainDatabasePath}`)
       this.exit(0)
     }
 
-    const blocksToBenchmark = 100
+    const blocksToBenchmark = 500
 
     if (node.chain.head.sequence < blocksToBenchmark) {
       this.log(`Need to sync more blocks for testing.`)
@@ -72,13 +76,16 @@ export default class BenchmarkChain extends IronfishCommand {
 
     const start = BenchUtils.start()
     await benchmarkNode.chain.notes.rehashTree()
-    totalTime += BenchUtils.end(start)
+    const timeToRehashTree = BenchUtils.end(start)
+    totalTime += timeToRehashTree
 
     const benchRootHash = await benchmarkNode.chain.notes.rootHash()
     const realRootHash = await node.chain.notes.pastRoot(finalHeader.noteCommitment.size)
     this.log(`bnch hash: ${benchRootHash.toString('hex')}`)
     this.log(`real hash: ${realRootHash.toString('hex')}`)
 
+    this.log(`Rehashed tree of ${await benchmarkNode.chain.notes.size()} notes.`)
+    this.log(`Time to rehash tree: ${timeToRehashTree} ms.`)
     this.log(`Benchmark complete in ${totalTime} ms.`)
   }
 }

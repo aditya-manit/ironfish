@@ -51,6 +51,9 @@ class StructureNodeEncoding implements IDatabaseEncoding<NodeValue<string>> {
     if (value.side === Side.Left) {
       bw.writeU8(0)
       bw.writeU32(value.parentIndex)
+      if (value.rightIndex != null) {
+        bw.writeU32(value.rightIndex)
+      }
     } else {
       bw.writeU8(1)
       bw.writeU32(value.leftIndex)
@@ -70,10 +73,15 @@ class StructureNodeEncoding implements IDatabaseEncoding<NodeValue<string>> {
     const otherIndex = reader.readU32()
 
     if (side === Side.Left) {
+      let rightIndex
+      if (reader.left() > 0) {
+        rightIndex = reader.readU32()
+      }
       const leftNode = {
         side,
         hashOfSibling,
         parentIndex: otherIndex,
+        rightIndex,
       } as const
       return leftNode
     }

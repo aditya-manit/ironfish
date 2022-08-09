@@ -345,10 +345,10 @@ export class Verifier {
           return { valid: false, reason: VerificationResultReason.DOUBLE_SPEND }
         }
 
-        const verificationError = await this.verifySpend(spend, previousNullifierSize, tx)
-        if (verificationError) {
-          return { valid: false, reason: verificationError }
-        }
+        // const verificationError = await this.verifySpend(spend, previousNullifierSize, tx)
+        // if (verificationError) {
+        //   return { valid: false, reason: verificationError }
+        // }
 
         processedSpends.add(spend.nullifier)
       }
@@ -413,15 +413,15 @@ export class Verifier {
         return { valid: false, reason: VerificationResultReason.NULLIFIER_COMMITMENT_SIZE }
       }
 
-      const pastNoteRoot = await this.chain.notes.pastRoot(noteSize, tx)
-      if (!pastNoteRoot.equals(header.noteCommitment.commitment)) {
-        return { valid: false, reason: VerificationResultReason.NOTE_COMMITMENT }
-      }
+      // const pastNoteRoot = await this.chain.notes.pastRoot(noteSize, tx)
+      // if (!pastNoteRoot.equals(header.noteCommitment.commitment)) {
+      //   return { valid: false, reason: VerificationResultReason.NOTE_COMMITMENT }
+      // }
 
-      const pastNullifierRoot = await this.chain.nullifiers.pastRoot(nullifierSize, tx)
-      if (!pastNullifierRoot.equals(header.nullifierCommitment.commitment)) {
-        return { valid: false, reason: VerificationResultReason.NULLIFIER_COMMITMENT }
-      }
+      // const pastNullifierRoot = await this.chain.nullifiers.pastRoot(nullifierSize, tx)
+      // if (!pastNullifierRoot.equals(header.nullifierCommitment.commitment)) {
+      //   return { valid: false, reason: VerificationResultReason.NULLIFIER_COMMITMENT }
+      // }
 
       const spendVerification = await this.verifyConnectedSpends(block, tx)
       if (!spendVerification.valid) {

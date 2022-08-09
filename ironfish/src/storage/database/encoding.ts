@@ -54,11 +54,11 @@ export class ArrayEncoding<T extends IJsonSerializable[]> extends JsonEncoding<T
 
 export default class BufferToStringEncoding implements Serde<Buffer, string> {
   serialize(element: Buffer): string {
-    return hexArray.toString(element)
+    return element.toString('hex')
   }
 
   deserialize(data: string): Buffer {
-    return Buffer.from(hexArray.fromString(data))
+    return Buffer.from(data, 'hex')
   }
 
   equals(): boolean {

@@ -95,7 +95,8 @@ expect.extend({
       }
 
       const node = await tree.getNode(index)
-      const diffString = diff(expected, node)
+      const { rightIndex: _rightIndex, ...filteredNode } = node
+      const diffString = diff(expected, filteredNode)
 
       if (diffString && diffString.includes('Expected')) {
         error = `node ${index} didn't match: \n\nDifference:\n\n${diffString}`

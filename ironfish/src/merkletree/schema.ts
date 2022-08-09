@@ -31,6 +31,7 @@ export type NodeValue<H> = {
   hashOfSibling: H
   parentIndex?: NodeIndex // left nodes have a parent index
   leftIndex?: NodeIndex // right nodes have a left index
+  rightIndex?: NodeIndex // left nodes may have a right index
 }
 
 export interface NodesSchema<H> extends DatabaseSchema {
