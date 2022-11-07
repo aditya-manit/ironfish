@@ -73,6 +73,64 @@ fn test_transaction() {
 }
 
 #[test]
+fn test_transaction_with_mint() {
+    let spender_key: SaplingKey = SaplingKey::generate_key();
+    let receiver_key: SaplingKey = SaplingKey::generate_key();
+    // let in_note = Note::new(spender_key.generate_public_address(), 42, "");
+    let out_note = Note::new(receiver_key.generate_public_address(), 40, "");
+    // let witness = make_fake_witness(&in_note);
+
+    let mut transaction = ProposedTransaction::new(spender_key);
+
+    transaction.add_mint([0; 32], 42);
+
+    // transaction.add_spend(in_note, &witness);
+    // assert_eq!(transaction.spends.len(), 1);
+    transaction.add_output(out_note);
+    assert_eq!(transaction.outputs.len(), 1);
+
+    let public_transaction = transaction
+        .post(None, 1)
+        .expect("should be able to post transaction");
+    public_transaction
+        .verify()
+        .expect("Should be able to verify transaction");
+    assert_eq!(public_transaction.fee(), 1);
+
+    // A change note was created
+    assert_eq!(public_transaction.outputs.len(), 2);
+}
+
+#[test]
+fn test_transaction_with_mint_and_spend() {
+    let spender_key: SaplingKey = SaplingKey::generate_key();
+    let receiver_key: SaplingKey = SaplingKey::generate_key();
+    let in_note = Note::new(spender_key.generate_public_address(), 22, "");
+    let out_note = Note::new(receiver_key.generate_public_address(), 40, "");
+    let witness = make_fake_witness(&in_note);
+
+    let mut transaction = ProposedTransaction::new(spender_key);
+
+    transaction.add_mint([0; 32], 20);
+
+    transaction.add_spend(in_note, &witness);
+    assert_eq!(transaction.spends.len(), 1);
+    transaction.add_output(out_note);
+    assert_eq!(transaction.outputs.len(), 1);
+
+    let public_transaction = transaction
+        .post(None, 1)
+        .expect("should be able to post transaction");
+    public_transaction
+        .verify()
+        .expect("Should be able to verify transaction");
+    assert_eq!(public_transaction.fee(), 1);
+
+    // A change note was created
+    assert_eq!(public_transaction.outputs.len(), 2);
+}
+
+#[test]
 fn test_miners_fee() {
     let receiver_key: SaplingKey = SaplingKey::generate_key();
     let out_note = Note::new(receiver_key.generate_public_address(), 42, "");

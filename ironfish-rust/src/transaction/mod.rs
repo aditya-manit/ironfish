@@ -20,13 +20,15 @@ use bellman::groth16::batch::Verifier;
 use blake2b_simd::Params as Blake2b;
 use bls12_381::Bls12;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use ff::Field;
 use group::GroupEncoding;
 use jubjub::ExtendedPoint;
-use rand::rngs::OsRng;
+use rand::{rngs::OsRng, thread_rng};
 
 use ironfish_zkp::{
     constants::{VALUE_COMMITMENT_RANDOMNESS_GENERATOR, VALUE_COMMITMENT_VALUE_GENERATOR},
     redjubjub::{PrivateKey, PublicKey, Signature},
+    ValueCommitment,
 };
 
 use std::{io, iter, slice::Iter};
@@ -36,6 +38,13 @@ mod tests;
 
 const SIGNATURE_HASH_PERSONALIZATION: &[u8; 8] = b"Bnsighsh";
 const TRANSACTION_SIGNATURE_VERSION: &[u8; 1] = &[0];
+
+#[derive(Clone)]
+pub struct MintDescription {
+    value: u64,
+    identifier: [u8; 32],
+    value_commitment: ValueCommitment,
+}
 
 /// A collection of spend and output proofs that can be signed and verified.
 /// In general, all the spent values should add up to all the output values.
@@ -54,6 +63,8 @@ pub struct ProposedTransaction {
     /// signatures. Note: This is commonly referred to as
     /// `outputs` in the literature.
     outputs: Vec<OutputBuilder>,
+
+    mints: Vec<MintDescription>,
 
     /// The balance of all the spends minus all the outputs. The difference
     /// is the fee paid to the miner for mining the transaction.
@@ -77,6 +88,7 @@ impl ProposedTransaction {
         ProposedTransaction {
             spends: vec![],
             outputs: vec![],
+            mints: vec![],
             value_balance: 0,
             expiration_sequence: 0,
             spender_key,
@@ -96,6 +108,23 @@ impl ProposedTransaction {
         self.value_balance -= note.value as i64;
 
         self.outputs.push(OutputBuilder::new(note));
+    }
+
+    pub fn add_mint(&mut self, identifier: [u8; 32], value: u64) {
+        self.value_balance += value as i64;
+
+        let value_commitment = ValueCommitment {
+            value,
+            randomness: jubjub::Fr::random(&mut thread_rng()),
+        };
+
+        let mint = MintDescription {
+            value,
+            identifier,
+            value_commitment,
+        };
+
+        self.mints.push(mint);
     }
 
     /// Post the transaction. This performs a bit of validation, and signs
@@ -186,7 +215,8 @@ impl ProposedTransaction {
             output_descriptions.push(output.build(&self.spender_key)?);
         }
 
-        let data_to_sign = self.transaction_signature_hash(&unsigned_spends, &output_descriptions);
+        let data_to_sign =
+            self.transaction_signature_hash(&unsigned_spends, &output_descriptions, &self.mints);
 
         let binding_signature =
             self.binding_signature(&bsig_keys.0, &bsig_keys.1, &data_to_sign)?;
@@ -202,6 +232,7 @@ impl ProposedTransaction {
             fee: self.value_balance,
             spends: spend_descriptions,
             outputs: output_descriptions,
+            mints: self.mints.clone(),
             binding_signature,
         })
     }
@@ -215,6 +246,7 @@ impl ProposedTransaction {
         &self,
         spends: &[UnsignedSpendDescription],
         outputs: &[OutputDescription],
+        mints: &[MintDescription],
     ) -> [u8; 32] {
         let mut hasher = Blake2b::new()
             .hash_length(32)
@@ -237,6 +269,12 @@ impl ProposedTransaction {
 
         for output in outputs {
             output.serialize_signature_fields(&mut hasher).unwrap();
+        }
+
+        for mint in mints {
+            hasher.update(&mint.identifier);
+            hasher.write_u64::<LittleEndian>(mint.value).unwrap();
+            hasher.update(&mint.value_commitment.commitment().to_bytes());
         }
 
         let mut hash_result = [0; 32];
@@ -284,6 +322,11 @@ impl ProposedTransaction {
             binding_verification_key -= output.value_commitment_point();
         }
 
+        for mint in &self.mints {
+            binding_signature_key += mint.value_commitment.randomness;
+            binding_verification_key += ExtendedPoint::from(mint.value_commitment.commitment());
+        }
+
         let private_key = PrivateKey(binding_signature_key);
         let public_key =
             PublicKey::from_private(&private_key, VALUE_COMMITMENT_RANDOMNESS_GENERATOR);
@@ -312,6 +355,8 @@ pub struct Transaction {
 
     /// List of outputs, or output notes that have been created.
     outputs: Vec<OutputDescription>,
+
+    mints: Vec<MintDescription>,
 
     /// Signature calculated from accumulating randomness with all the spends
     /// and outputs when the transaction was created.
@@ -349,6 +394,7 @@ impl Transaction {
             fee,
             spends,
             outputs,
+            mints: vec![],
             binding_signature,
             expiration_sequence,
         })
@@ -439,6 +485,12 @@ impl Transaction {
         }
         for output in self.outputs.iter() {
             output.serialize_signature_fields(&mut hasher).unwrap();
+        }
+
+        for mint in self.mints.iter() {
+            hasher.update(&mint.identifier);
+            hasher.write_u64::<LittleEndian>(mint.value).unwrap();
+            hasher.update(&mint.value_commitment.commitment().to_bytes());
         }
 
         let mut hash_result = [0; 32];
@@ -545,6 +597,10 @@ pub fn batch_verify_transactions<'a>(
             output_verifier.queue((&output.proof, &public_inputs[..]));
 
             binding_verification_key -= output.merkle_note.value_commitment;
+        }
+
+        for mint in transaction.mints.iter() {
+            binding_verification_key += ExtendedPoint::from(mint.value_commitment.commitment());
         }
 
         transaction.verify_binding_signature(&binding_verification_key)?;
