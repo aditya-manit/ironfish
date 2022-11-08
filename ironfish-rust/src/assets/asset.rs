@@ -2,14 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 use crate::{errors::IronfishError, util::str_to_array, PublicAddress};
+use group::GroupEncoding;
 use ironfish_zkp::{
-    constants::{
-        ASSET_IDENTIFIER_LENGTH, ASSET_IDENTIFIER_PERSONALIZATION,
-        VALUE_COMMITMENT_GENERATOR_PERSONALIZATION,
-    },
+    constants::{ASSET_IDENTIFIER_LENGTH, VALUE_COMMITMENT_GENERATOR_PERSONALIZATION},
     group_hash,
 };
-use std::slice::from_ref;
+use std::{io::Write, slice};
 
 #[allow(dead_code)]
 pub type AssetIdentifier = [u8; ASSET_IDENTIFIER_LENGTH];
@@ -18,6 +16,13 @@ pub const NATIVE_ASSET: AssetIdentifier = [
     215, 200, 103, 6, 245, 129, 122, 167, 24, 205, 28, 250, 208, 50, 51, 188, 214, 74, 119, 137,
     253, 148, 34, 211, 177, 122, 246, 130, 58, 126, 106, 198,
 ];
+
+const IDENTIFIER_PREIMAGE_LENGTH: usize = 32 // name
+    + 32 // chain
+    + 32 // network
+    + 32 // token_identifier
+    + 43 // owner public address
+    + 1; // nonce
 
 /// Describes all the fields necessary for creating and transacting with an
 /// asset on the Iron Fish network
@@ -87,24 +92,18 @@ impl Asset {
         token_identifier: [u8; 32],
         nonce: u8,
     ) -> Result<Asset, IronfishError> {
-        // Check the personalization is acceptable length
-        assert_eq!(ASSET_IDENTIFIER_PERSONALIZATION.len(), 8);
-
-        // Create a new BLAKE2s state for deriving the asset identifier
-        let h = blake2s_simd::Params::new()
-            .hash_length(ASSET_IDENTIFIER_LENGTH)
-            .personal(ASSET_IDENTIFIER_PERSONALIZATION)
-            .to_state()
-            .update(&owner.public_address())
-            .update(&name)
-            .update(&chain)
-            .update(&network)
-            .update(&token_identifier)
-            .update(from_ref(&nonce))
-            .finalize();
+        let mut preimage = Vec::with_capacity(IDENTIFIER_PREIMAGE_LENGTH);
+        preimage.write_all(&owner.public_address())?;
+        preimage.write_all(&name)?;
+        preimage.write_all(&chain)?;
+        preimage.write_all(&network)?;
+        preimage.write_all(&token_identifier)?;
+        preimage.write_all(slice::from_ref(&nonce))?;
 
         // Check that this is valid as a value commitment generator point
-        if group_hash(h.as_bytes(), VALUE_COMMITMENT_GENERATOR_PERSONALIZATION).is_some() {
+        if let Some(generator_point) =
+            group_hash(&preimage, VALUE_COMMITMENT_GENERATOR_PERSONALIZATION)
+        {
             Ok(Asset {
                 owner,
                 name,
@@ -112,7 +111,7 @@ impl Asset {
                 network,
                 token_identifier,
                 nonce,
-                identifier: *h.as_array(),
+                identifier: generator_point.to_bytes(),
             })
         } else {
             Err(IronfishError::InvalidAssetIdentifier)
@@ -161,7 +160,7 @@ mod test {
         let chain = str_to_array("chain");
         let network = str_to_array("network");
         let token_identifier = str_to_array("token identifier");
-        let nonce = 0;
+        let nonce = 2;
 
         let asset = Asset::new_with_nonce(owner, name, chain, network, token_identifier, nonce)
             .expect("can create an asset");
@@ -175,8 +174,8 @@ mod test {
         assert_eq!(
             asset.identifier,
             [
-                174, 9, 19, 214, 96, 63, 10, 51, 94, 42, 41, 186, 207, 162, 48, 235, 1, 255, 211,
-                190, 228, 93, 137, 120, 138, 89, 61, 168, 168, 11, 150, 127
+                239, 38, 106, 64, 62, 130, 45, 125, 77, 114, 12, 122, 9, 173, 248, 164, 86, 58,
+                244, 54, 238, 165, 86, 164, 31, 98, 78, 192, 15, 94, 154, 25
             ],
         );
     }
