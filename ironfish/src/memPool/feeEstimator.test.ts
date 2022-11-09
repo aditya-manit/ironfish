@@ -414,7 +414,7 @@ describe('FeeEstimator', () => {
         8 +
         4 +
         64 +
-        NOTE_ENCRYPTED_SERIALIZED_SIZE_IN_BYTE +
+        2 * NOTE_ENCRYPTED_SERIALIZED_SIZE_IN_BYTE +
         SPEND_SERIALIZED_SIZE_IN_BYTE
 
       const fee = await feeEstimator.estimateFee('low', account1, [
