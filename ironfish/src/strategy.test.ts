@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-import { ConsensusParameters, IRON_FISH_YEAR_IN_BLOCKS, TestnetParameters } from './consensus'
+import { ConsensusParameters, IRON_FISH_YEAR_IN_BLOCKS } from './consensus'
 import { Strategy } from './strategy'
 import { WorkerPool } from './workerPool'
 
